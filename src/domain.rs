@@ -95,6 +95,26 @@ pub mod sys {
     }
 
     pub type virDomainMemoryStatsPtr = *mut virDomainMemoryStats;
+
+    #[repr(C)]
+    #[derive(Default)]
+    pub struct virDomainIpAddress {
+        pub type_: libc::c_int,
+        pub addr: libc::c_char,
+        pub prefix: libc::c_uint,
+    }
+
+    pub type virDomainIpAddressPtr = *mut virDomainIpAddress;
+
+    #[repr(C)]
+    pub struct  virDomainInterface {
+        pub name: libc::c_char,
+        pub hwaddr: libc::c_char,
+        pub naddrs: libc::c_uint,
+        pub addrs: virDomainIpAddressPtr,
+    }
+
+    pub type virDomainInterfacePtr = *mut virDomainInterface;
 }
 
 #[link(name = "virt")]
@@ -363,6 +383,11 @@ extern "C" {
                                  snaps: *mut *mut virDomainSnapshotPtr,
                                  flags: libc::c_uint)
                                  -> libc::c_int;
+    fn virDomainInterfaceAddresses(ptr: sys::virDomainPtr,
+                                   ifaces: sys::virDomainInterfacePtr,
+                                   source: libc::c_uint,
+                                   flags: libc::c_uint,)
+                                 -> libc::c_int;
 }
 
 pub type DomainXMLFlags = self::libc::c_uint;
@@ -443,6 +468,17 @@ pub const VIR_DOMAIN_SHUTDOWN: DomainState = 4;
 pub const VIR_DOMAIN_SHUTOFF: DomainState = 5;
 pub const VIR_DOMAIN_CRASHED: DomainState = 6;
 pub const VIR_DOMAIN_PMSUSPENDED: DomainState = 7;
+
+pub type DomainInterfaceAddressSource = self::libc::c_uint;
+pub const VIR_DOMAIN_INTERFACE_ADDRESSES_SRC_LEASE: DomainInterfaceAddressSource = 0;
+pub const VIR_DOMAIN_INTERFACE_ADDRESSES_SRC_AGENT: DomainInterfaceAddressSource = 1;
+pub const VIR_DOMAIN_INTERFACE_ADDRESSES_SRC_ARP: DomainInterfaceAddressSource = 2;
+pub const VIR_DOMAIN_INTERFACE_ADDRESSES_SRC_LAST: DomainInterfaceAddressSource = 3;
+
+pub type IPAddrType = self::libc::c_int;
+pub const VIR_IP_ADDR_TYPE_IPV4: IPAddrType = 0;
+pub const VIR_IP_ADDR_TYPE_IPV6: IPAddrType = 1;
+pub const VIR_IP_ADDR_TYPE_LAST: IPAddrType = 2;
 
 #[derive(Clone, Debug)]
 pub struct DomainInfo {
@@ -605,6 +641,20 @@ impl MemoryStats {
             }
         }
     }
+}
+
+#[derive(Debug)]
+pub struct DomainIpAddress {
+    type_: IPAddrType,
+    addr: String,
+    prefix: u32,
+}
+
+#[derive(Debug)]
+pub struct DomainInterface {
+    name: String,
+    hwaddr: Option<String>,
+    addrs: Vec<String>,
 }
 
 /// Provides APIs for the management of domains.
@@ -1407,6 +1457,10 @@ impl Domain {
             }
             return Ok(ret as u32);
         }
+    }
+
+    pub fn interface_addresses(&self) -> Result<Vec<DomainInterface>, Error> {
+        unimplemented!();
     }
 
     pub fn interface_stats(&self, path: &str) -> Result<InterfaceStats, Error> {
