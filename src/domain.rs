@@ -1460,6 +1460,8 @@ impl Domain {
     }
 
     pub fn interface_addresses(&self, source: DomainInterfaceAddressSource) -> Result<Vec<DomainInterface>, Error> {
+        use domain::sys::{virDomainInterfacePtr, virDomainIpAddressPtr};
+
         let mut interfaces: Vec<DomainInterface> = Vec::new();
         let mut iface_ptr: *mut sys::virDomainInterfacePtr = ptr::null_mut();
 
@@ -1469,18 +1471,18 @@ impl Domain {
                 return Err(Error::new());
             }
 
-            let ifaces = slice::from_raw_parts(iface_ptr, ifaces_count as usize);
+            let ifaces = slice::from_raw_parts::<*mut virDomainInterfacePtr>(&mut iface_ptr, ifaces_count as usize);
 
             for iface in ifaces {
-                let name = str::from_utf8(CStr::from_ptr((**iface).name).to_bytes()).unwrap().to_string();
-                let hwaddr = str::from_utf8(CStr::from_ptr((**iface).hwaddr).to_bytes()).unwrap().to_string();
+                let name = String::from_utf8_lossy(CStr::from_ptr((***iface).name).to_bytes()).into_owned();
+                let hwaddr = String::from_utf8_lossy(CStr::from_ptr((***iface).hwaddr).to_bytes()).into_owned();
 
-                let raw_addrs =slice::from_raw_parts((**iface).addrs, (**iface).naddrs as usize);
+                let raw_addrs = slice::from_raw_parts::<virDomainIpAddressPtr>(&mut (***iface).addrs, (***iface).naddrs as usize);
                 let addresses = raw_addrs.into_iter()
                     .map(|a| DomainIpAddress {
-                        type_: a.type_,
-                        addr: str::from_utf8(CStr::from_ptr(a.addr).to_bytes()).unwrap().to_owned(),
-                        prefix: a.prefix
+                        type_: (**a).type_,
+                        addr: String::from_utf8_lossy(CStr::from_ptr((**a).addr).to_bytes()).into_owned(),
+                        prefix: (**a).prefix
                     }).collect::<Vec<DomainIpAddress>>();
 
                 interfaces.push(
