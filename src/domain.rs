@@ -20,6 +20,7 @@ extern crate libc;
 
 use std::ffi::CStr;
 use std::{str, ptr, mem};
+use std::slice;
 
 use connect::sys::virConnectPtr;
 use domain_snapshot::sys::virDomainSnapshotPtr;
@@ -97,10 +98,9 @@ pub mod sys {
     pub type virDomainMemoryStatsPtr = *mut virDomainMemoryStats;
 
     #[repr(C)]
-    #[derive(Default)]
     pub struct virDomainIpAddress {
         pub type_: libc::c_int,
-        pub addr: libc::c_char,
+        pub addr: *const libc::c_char,
         pub prefix: libc::c_uint,
     }
 
@@ -108,8 +108,8 @@ pub mod sys {
 
     #[repr(C)]
     pub struct  virDomainInterface {
-        pub name: libc::c_char,
-        pub hwaddr: libc::c_char,
+        pub name: *const libc::c_char,
+        pub hwaddr: *const libc::c_char,
         pub naddrs: libc::c_uint,
         pub addrs: virDomainIpAddressPtr,
     }
@@ -384,7 +384,7 @@ extern "C" {
                                  flags: libc::c_uint)
                                  -> libc::c_int;
     fn virDomainInterfaceAddresses(ptr: sys::virDomainPtr,
-                                   ifaces: sys::virDomainInterfacePtr,
+                                   ifaces: *mut *mut sys::virDomainInterfacePtr,
                                    source: libc::c_uint,
                                    flags: libc::c_uint,)
                                  -> libc::c_int;
@@ -645,16 +645,16 @@ impl MemoryStats {
 
 #[derive(Debug)]
 pub struct DomainIpAddress {
-    type_: IPAddrType,
-    addr: String,
-    prefix: u32,
+    pub type_: IPAddrType,
+    pub addr: String,
+    pub prefix: u32,
 }
 
 #[derive(Debug)]
 pub struct DomainInterface {
-    name: String,
-    hwaddr: Option<String>,
-    addrs: Vec<String>,
+    pub name: String,
+    pub hwaddr: String,
+    pub addrs: Vec<DomainIpAddress>,
 }
 
 /// Provides APIs for the management of domains.
@@ -1459,8 +1459,41 @@ impl Domain {
         }
     }
 
-    pub fn interface_addresses(&self) -> Result<Vec<DomainInterface>, Error> {
-        unimplemented!();
+    pub fn interface_addresses(&self, source: DomainInterfaceAddressSource) -> Result<Vec<DomainInterface>, Error> {
+        let mut interfaces: Vec<DomainInterface> = Vec::new();
+        let mut iface_ptr: *mut sys::virDomainInterfacePtr = ptr::null_mut();
+
+        unsafe {
+            let ifaces_count = virDomainInterfaceAddresses(self.as_ptr(), &mut iface_ptr, source, 0);
+            if ifaces_count == -1 {
+                return Err(Error::new());
+            }
+
+            let ifaces = slice::from_raw_parts(iface_ptr, ifaces_count as usize);
+
+            for iface in ifaces {
+                let name = str::from_utf8(CStr::from_ptr((**iface).name).to_bytes()).unwrap().to_string();
+                let hwaddr = str::from_utf8(CStr::from_ptr((**iface).hwaddr).to_bytes()).unwrap().to_string();
+
+                let raw_addrs =slice::from_raw_parts((**iface).addrs, (**iface).naddrs as usize);
+                let addresses = raw_addrs.into_iter()
+                    .map(|a| DomainIpAddress {
+                        type_: a.type_,
+                        addr: str::from_utf8(CStr::from_ptr(a.addr).to_bytes()).unwrap().to_owned(),
+                        prefix: a.prefix
+                    }).collect::<Vec<DomainIpAddress>>();
+
+                interfaces.push(
+                    DomainInterface {
+                        name: name,
+                        hwaddr: hwaddr,
+                        addrs: addresses,
+                    }
+                );
+            }
+        }
+
+        Ok(interfaces)
     }
 
     pub fn interface_stats(&self, path: &str) -> Result<InterfaceStats, Error> {
